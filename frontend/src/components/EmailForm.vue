@@ -16,6 +16,7 @@ const attachments = ref<Array<{ filename: string; content: string }>>([]);
 // UI 状态
 const loading = ref(false);
 const message = ref('');
+const messageDetail = ref(''); // 详细信息（支持 HTML）
 const messageType = ref<'success' | 'error' | ''>('');
 
 // 分割邮箱地址（逗号或分号分隔）
@@ -74,16 +75,52 @@ function removeAttachment(index: number) {
 
 // 显示消息
 function showMessage(msg: string, type: 'success' | 'error') {
-  message.value = msg;
   messageType.value = type;
-  setTimeout(() => {
-    message.value = '';
-    messageType.value = '';
-  }, 5000);
+
+  // 解析并美化错误消息
+  if (type === 'error') {
+    // 检测 Resend 测试限制错误
+    const testingMatch = msg.match(/You can only send testing emails to your own email address \((.+?)\)/);
+    if (testingMatch) {
+      message.value = '发送失败';
+      messageDetail.value = `
+        <div class="space-y-2">
+          <div>测试环境限制：只能发送到你的账户邮箱</div>
+          <div>可发送地址：<span class="bg-red-100 px-2 py-1 rounded font-mono font-semibold">${testingMatch[1]}</span></div>
+        </div>
+      `;
+    } else {
+      // 其他错误：自动高亮邮箱地址
+      message.value = '发送失败';
+      const highlighted = msg.replace(
+        /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g,
+        '<span class="bg-red-100 px-1 rounded font-mono font-semibold">$1</span>'
+      );
+      messageDetail.value = highlighted;
+    }
+  } else {
+    // 成功消息
+    message.value = msg;
+    messageDetail.value = '';
+  }
+
+  // 仅成功消息自动消失，错误消息持久显示
+  if (type === 'success') {
+    setTimeout(() => {
+      message.value = '';
+      messageDetail.value = '';
+      messageType.value = '';
+    }, 5000);
+  }
 }
 
 // 发送邮件
 async function sendEmail() {
+  // 清空之前的消息
+  message.value = '';
+  messageDetail.value = '';
+  messageType.value = '';
+
   // 验证必填字段
   if (!apiKey.value.trim()) {
     showMessage('请输入 Resend API Key', 'error');
@@ -109,7 +146,6 @@ async function sendEmail() {
   }
 
   loading.value = true;
-  message.value = '';
 
   try {
     const requestBody: any = {
@@ -370,11 +406,12 @@ function resetForm(resetApiKey = true) {
       <div
         v-if="message"
         :class="[
-          'p-4 rounded-lg',
+          'p-4 rounded-lg space-y-2',
           messageType === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
         ]"
       >
-        {{ message }}
+        <div class="font-semibold">{{ message }}</div>
+        <div v-if="messageDetail" v-html="messageDetail" class="text-sm"></div>
       </div>
 
       <!-- 操作按钮 -->
